@@ -1,4 +1,3 @@
-import cgi
 import copy
 import datetime
 import email.utils
@@ -23,16 +22,48 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 import pymysql
 
+"""
+create table danmu
+(
+    ID int PRIMARY KEY AUTO_INCREMENT,
+    videoID int,
+    videoTime int,
+    size int,
+    color int,
+    content varchar(20),
+    date timestamp(14)
+);
+"""
+
 # connect to database
-user = input("Please input your mysql user name:")
-password = input("Please input your mysql password:")
+user = "multi"
+password = "passwd"
 conn = pymysql.connect(host='localhost', user=user, passwd=password,
-                       db='mysql', charset='utf8', port=3306)  # 默认为127.0.0.1本地主机
+                       db='danmudb', charset='utf8', port=3306)  # 默认为127.0.0.1本地主机
 cur = conn.cursor(cursor=pymysql.cursors.DictCursor)
-cur.excute("USE DanmuDB")
+# cur.excute("USE DanmuDB")
+
+
+class CJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime.datetime):
+            return obj.timestamp()
+        else:
+            return json.JSONEncoder.default(self, obj)
 
 
 class myHTTPRequestHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        """Serve a GET request."""
+        f = self.send_head()
+        if f:
+            if isinstance(f, str):
+                self.wfile.write(f.encode())
+            else:
+                try:
+                    self.copyfile(f, self.wfile)
+                finally:
+                    f.close()
 
     def send_head(self):
         """Common code for GET and HEAD commands.
@@ -45,17 +76,25 @@ class myHTTPRequestHandler(SimpleHTTPRequestHandler):
         None, in which case the caller has nothing further to do.
 
         """
-        pattern = re.compile(r'^danmu/\d+$')
-        if pattern.match(self.path) != None:
+        pattern = re.compile(r"^/danmu/\d+/\d+$")    # danmu/[视频ID]/[弹幕ID]
+        num_pattern = re.compile(r'\d+')
+        match_obj = pattern.match(self.path)
+        if match_obj:
             # TODO
-            id_str = self.path[6:]
+            search_result = num_pattern.findall(self.path)
             # TODO 还要指定视频
-            cur.excute('SELECT * FROM DANMUS WHERE id > "%s"') % (id_str)
+            danmu_id = int(search_result[1])
+            video_id = int(search_result[0])
+            # cur.execute("SELECT * FROM `danmudb`.`danmu` where `danmu`.`ID`>(%d) and `danmu`.`videoID`=(%d)") % (
+            #     danmu_id, video_id)
+            cur.execute(
+                "select * from `danmudb`.`danmu` where `danmu`.`ID`>%d and `danmu`.`videoID`=%d" %
+                (danmu_id, video_id))
             results = cur.fetchall()
             ans = ""
             for row in results:
                 # TODO 需要根据数据库实际情况修正
-                cur_json = json.dumps(row)
+                cur_json = json.dumps(row, cls=CJsonEncoder)
                 ans += cur_json + '\n'
 
             self.send_response(HTTPStatus.OK)
@@ -134,26 +173,28 @@ class myHTTPRequestHandler(SimpleHTTPRequestHandler):
                 raise
 
     def do_POST(self):
-        # TODO CGI needed
-        content_length = int(self.headers['Content_Length'])
+        # TODO
+        header_dict = dict(self.headers._headers)
+        content_length = int(header_dict['Content-Length'])
         body = self.rfile.read(content_length)
         body_str = body.decode('UTF-8', 'strict')
         self.send_response(HTTPStatus.OK)
         self.end_headers()
         danmuData = json.loads(body_str)
 
-        # TODO 需要根据数据库实际情况修正
-        insert_sql = "INSERT INTO DANMUS () VALUES ('%s', '%s', '%s')" % (
-            danmuData['content'], danmuData['size'], danmuData['color'])
+        # TODO id 和 tsp 不需要设置，插入时自动生成
+        insert_sql = "INSERT INTO `danmudb`.`danmu` (`videoID`, `videoTime`, `size`, `color`, `content`) VALUES (%d, %d, %d, %d, '%s')" % (
+            danmuData['videoID'], danmuData['videoTime'], danmuData['size'], danmuData['color'], danmuData['content'])
 
         try:
-            cur.excute(insert_sql)
+            cur.execute(insert_sql)
             conn.commit()
         except:
             conn.rollback()
 
 
-httpd = HTTPServer(('localhost', 9000), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('localhost', 9000), myHTTPRequestHandler)
 httpd.serve_forever()
 
+cur.close()
 conn.close()
