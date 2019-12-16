@@ -31,7 +31,7 @@ create table danmu
     size int,
     color int,
     content varchar(20),
-    date timestamp(14)
+    date timestamp
 );
 """
 
@@ -41,7 +41,7 @@ password = "passwd"
 conn = pymysql.connect(host='localhost', user=user, passwd=password,
                        db='danmudb', charset='utf8', port=3306)  # 默认为127.0.0.1本地主机
 cur = conn.cursor(cursor=pymysql.cursors.DictCursor)
-# cur.excute("USE DanmuDB")
+# cur.execute("USE DanmuDB")
 
 
 class CJsonEncoder(json.JSONEncoder):
@@ -80,20 +80,15 @@ class myHTTPRequestHandler(SimpleHTTPRequestHandler):
         num_pattern = re.compile(r'\d+')
         match_obj = pattern.match(self.path)
         if match_obj:
-            # TODO
             search_result = num_pattern.findall(self.path)
-            # TODO 还要指定视频
             danmu_id = int(search_result[1])
             video_id = int(search_result[0])
-            # cur.execute("SELECT * FROM `danmudb`.`danmu` where `danmu`.`ID`>(%d) and `danmu`.`videoID`=(%d)") % (
-            #     danmu_id, video_id)
             cur.execute(
                 "select * from `danmudb`.`danmu` where `danmu`.`ID`>%d and `danmu`.`videoID`=%d" %
                 (danmu_id, video_id))
             results = cur.fetchall()
             ans = ""
             for row in results:
-                # TODO 需要根据数据库实际情况修正
                 cur_json = json.dumps(row, cls=CJsonEncoder)
                 ans += cur_json + '\n'
 
@@ -173,7 +168,6 @@ class myHTTPRequestHandler(SimpleHTTPRequestHandler):
                 raise
 
     def do_POST(self):
-        # TODO
         header_dict = dict(self.headers._headers)
         content_length = int(header_dict['Content-Length'])
         body = self.rfile.read(content_length)
